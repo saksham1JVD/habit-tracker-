@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Student Habit Tracker</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 700px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f8f9fa;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      color: #2c3e50;
+    }
+    .habit {
+      margin: 10px 0;
+      padding: 12px;
+      border-radius: 8px;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .habit label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    .habit input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    button {
+      margin-top: 10px;
+      padding: 10px 16px;
+      background: #3498db;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background: #2980b9;
+    }
+    button.danger {
+      background: #e74c3c;
+    }
+    button.danger:hover {
+      background: #c0392b;
+    }
+    .stats {
+      margin-top: 20px;
+      padding: 14px;
+      border-radius: 8px;
+      background: #e8f4f8;
+    }
+    .progress {
+      margin: 5px 0;
+    }
+    .progress label {
+      margin-bottom: 4px;
+      font-weight: 600;
+      display: block;
+    }
+    progress {
+      width: 100%;
+      height: 16px;
+    }
+    .log {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #e8f4f8;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .log-item {
+      padding: 8px 0;
+      border-bottom: 1px dashed #ccc;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .log-item:last-child {
+      border-bottom: none;
+    }
+    .log-date {
+      font-weight: bold;
+    }
+    .log-habits {
+      font-size: 0.9em;
+      color: #555;
+      margin-bottom: 5px;
+    }
+    .chart {
+      margin-top: 20px;
+      padding: 12px;
+      border-radius: 8px;
+      background: #fff;
+      border: 1px solid #eee;
+    }
+    canvas {
+      width: 100%;
+      max-height: 200px;
+      border: 1px solid #eee;
+    }
+  </style>
+</head>
+<body>
+  <h1>Student Habit Tracker</h1>
+
+  <div id="habit-form">
+    <div class="habit">
+      <label>📚 Study time (minutes)</label>
+      <input type="number" id="study-time" min="0" placeholder="e.g. 60" />
+    </div>
+
+    <div class="habit">
+      <label>🧠 Exercises completed</label>
+      <input type="number" id="exercises" min="0" placeholder="e.g. 5" />
+    </div>
+
+    <div class="habit">
+      <label>🏃‍♀️ Exercise / physical activity (minutes)</label>
+      <input type="number" id="exercise-minutes" min="0" placeholder="e.g. 30" />
+    </div>
+
+    <div class="habit">
+      <label>📱 Free time (minutes)</label>
+      <input type="number" id="free-time" min="0" placeholder="e.g. 90" />
+    </div>
+
+    <div class="habit">
+      <label>😴 Sleep (hours)</label>
+      <input type="number" id="sleep-hours" min="0" step="0.5" placeholder="e.g. 7.5" />
+    </div>
+
+    <button id="save-btn">Save Today</button>
+  </div>
+
+  <div class="stats">
+    <h2>📊 Stats</h2>
+    <div class="progress">
+      <label>Current streak (days): <span id="streak-count">0</span></label>
+      <progress id="streak-bar" value="0" max="10"></progress>
+    </div>
+    <div class="progress">
+      <label>Scores today (max 100): <span id="score-value">0</span>/100</label>
+      <progress id="score-bar" value="0" max="100"></progress>
+    </div>
+    <small>Score is based on study + exercise; lower free time is better.</small>
+  </div>
+
+  <div class="log">
+    <h2>📅 Habit Log</h2>
+    <button id="delete-all" class="danger">Delete All History</button>
+    <div id="log-content"></div>
+  </div>
+
+  <div class="chart">
+    <h2>📈 Last 7 Days</h2>
+    <canvas id="chart-canvas"></canvas>
+  </div>
+
+  <script>
+    const SAVE_KEY = "student-habit-log-enhanced";
+
+    const habitIds = [
+      "study-time",
+      "exercises",
+      "exercise-minutes",
+      "free-time",
+      "sleep-hours"
+    ];
+
+    // helpers
+    function loadLog() {
+      const saved = localStorage.getItem(SAVE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    }
+
+    function saveLog(log) {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(log));
+    }
+
+    function isToday(dateStr) {
+      const d = new Date();
+      const today = d.toISOString().split("T")[0];
+      return dateStr === today;
+    }
+
+    function emptyEntry(entry) {
+      return habitIds.every(id => {
+        const v = entry[id];
+        return v == null || v === "" || v === 0;
+      });
+    }
+
+    function calculateScore(entry) {
+      const study = entry["study-time"] || 0;
+      const exerciseMinutes = entry["exercise-minutes"] || 0;
+      const freeTime = entry["free-time"] || 0;
+
+      // higher study + exercise, lower free time → higher score
+      const raw = study + exerciseMinutes - freeTime;
+      return Math.max(0, Math.min(100, raw / 2)); // clamp 0–100
+    }
+
+    function calculateStreak(log) {
+      if (log.length === 0) return 0;
+
+      const now = new Date();
+      const todayStr = now.toISOString().split("T")[0];
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      // sort log by date descending
+      log.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      let streak = 0;
+      let cursor = new Date(today);
+
+      for (let i = 0; i < 365; i++) {
+        const dateStr = cursor.toISOString().split("T")[0];
+        const entry = log.find(e => e.date === dateStr);
+
+        if (entry && !emptyEntry(entry)) {
+          streak += 1;
+          cursor.setDate(cursor.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+
+      return streak;
+    }
+
+    function renderStreakAndScore() {
+      const log = loadLog();
+      const todayStr = new Date().toISOString().split("T")[0];
+      const todayEntry = log.find(e => e.date === todayStr);
+
+      const streak = calculateStreak(log);
+      const score = todayEntry ? calculateScore(todayEntry) : 0;
+
+      const streakBar = document.getElementById("streak-bar");
+      const scoreBar = document.getElementById("score-bar");
+      const streakCountEl = document.getElementById("streak-count");
+      const scoreValueEl = document.getElementById("score-value");
+
+      streakBar.value = Math.min(streak, 10);
+      streakBar.max = 10;
+      scoreBar.value = score;
+
+      streakCountEl.textContent = streak;
+      scoreValueEl.textContent = Math.round(score);
+    }
+
+    function renderLog() {
+      const log = loadLog();
+      const el = document.getElementById("log-content");
+      el.innerHTML = "";
+
+      if (log.length === 0) {
+        el.innerHTML = "<p>No habits recorded yet.</p>";
+        return;
+      }
+
+      const recent = log.slice(-7).reverse();
+      recent.forEach(entry => {
+        const item = document.createElement("div");
+        item.className = "log-item";
+
+        const date = new Date(entry.date).toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric"
+        });
+
+        let habitText = "";
+        for (const id of habitIds) {
+          if (entry[id] !== undefined && entry[id] !== null) {
+            const readableName = id
+              .replace(/-/g, " ")
+              .replace(/\b\w/g, c => c.toUpperCase());
+            habitText += `${readableName}: ${entry[id]} `;
+          }
+        }
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "danger";
+        deleteBtn.textContent = "Delete";
+        deleteBtn.onclick = () => {
+          const newLog = log.filter(e => e.date !== entry.date);
+          saveLog(newLog);
+          renderLog();
+          renderStreakAndScore();
+          renderChart();
+        };
+
+        item.innerHTML = `
+          <div style="flex: 1;">
+            <div class="log-date">${date}</div>
+            <div class="log-habits">${habitText}</div>
+          </div>
+        `;
+        item.appendChild(deleteBtn);
+
+        el.appendChild(item);
+      });
+    }
+
+    function renderChart() {
+      const ctx = document.getElementById("chart-canvas").getContext("2d");
+      const log = loadLog();
+      const recent = log.slice(-7).reverse();
+
+      const labels = recent.map(e => {
+        const d = new Date(e.date);
+        return d.getDate() + "/" + (d.getMonth() + 1);
+      });
+      const study = recent.map(e => e["study-time"] || 0);
+      const free = recent.map(e => e["free-time"] || 0);
+
+      const width = ctx.canvas.width;
+      const height = ctx.canvas.height;
+
+      ctx.clearRect(0, 0, width, height);
+
+      ctx.font = "10px Arial";
+      ctx.fillStyle = "black";
+      labels.forEach((label, i) => {
+        const x = (i + 0.5) * (width / labels.length);
+        ctx.fillText(label, x - 10, height - 5);
+      });
+
+      const maxY = Math.max(...study, ...free, 100);
+      const zeroY = height - 20;
+
+      const yScale = (height - 40) / maxY;
+
+      // study line (blue)
+      ctx.strokeStyle = "#3498db";
+      ctx.beginPath();
+      study.forEach((y, i) => {
+        const x = (i + 0.5) * (width / labels.length);
+        const cy = zeroY - y * yScale;
+        if (i === 0) ctx.moveTo(x, cy);
+        else ctx.lineTo(x, cy);
+      });
+      ctx.stroke();
+
+      // free time line (red)
+      ctx.strokeStyle = "#e74c3c";
+      ctx.beginPath();
+      free.forEach((y, i) => {
+        const x = (i + 0.5) * (width / labels.length);
+        const cy = zeroY - y * yScale;
+        if (i === 0) ctx.moveTo(x, cy);
+        else ctx.lineTo(x, cy);
+      });
+      ctx.stroke();
+    }
+
+    function saveToday() {
+      const now = new Date();
+      const todayStr = now.toISOString().split("T")[0];
+
+      const log = loadLog();
+      const todayEntryIndex = log.findIndex(e => e.date === todayStr);
+
+      const today = { date: todayStr };
+      let nonEmpty = false;
+
+      for (const id of habitIds) {
+        const input = document.getElementById(id);
+        const value = input.value.trim();
+        if (value) {
+          const n = parseFloat(value);
+          today[id] = n;
+          nonEmpty = true; // mark entry as non‑empty
+        }
+        input.value = ""; // clear
+      }
+
+      if (!nonEmpty) {
+        alert("Please fill at least one habit before saving.");
+        return;
+      }
+
+      if (todayEntryIndex >= 0) {
+        log[todayEntryIndex] = today;
+      } else {
+        log.push(today);
+      }
+
+      saveLog(log);
+      renderLog();
+      renderStreakAndScore();
+      renderChart();
+    }
+
+    function deleteAll() {
+      if (!confirm("Delete ALL habit history? This cannot be undone.")) return;
+      localStorage.removeItem(SAVE_KEY);
+      renderLog();
+      renderStreakAndScore();
+      renderChart();
+    }
+
+    document.getElementById("save-btn").addEventListener("click", saveToday);
+    document.getElementById("delete-all").addEventListener("click", deleteAll);
+
+    // render log, stats, and chart on page load
+    renderLog();
+    renderStreakAndScore();
+    renderChart();
+  </script>
+</body>
+</html>
